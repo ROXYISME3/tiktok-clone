@@ -20,19 +20,13 @@ app.use(express.json());
 
 const db = mysql.createPool({
   host: process.env.DB_HOST || "localhost",
-
-  port: process.env.DB_PORT || 3306,
-
+  port: Number(process.env.DB_PORT) || 3306,
   user: process.env.DB_USER || "root",
-
   password: process.env.DB_PASSWORD || "",
-
   database: process.env.DB_NAME || "tiktok_clone",
 
   waitForConnections: true,
-
   connectionLimit: 10,
-
   queueLimit: 0,
 });
 
@@ -59,9 +53,7 @@ app.get("/api/test", async (req, res) => {
 
     res.json({
       success: true,
-
       message: "MySQL connection is working!",
-
       result: rows,
     });
   } catch (error) {
@@ -72,9 +64,7 @@ app.get("/api/test", async (req, res) => {
 
     res.status(500).json({
       success: false,
-
       message: "MySQL connection failed.",
-
       error: error.message,
     });
   }
@@ -93,22 +83,24 @@ app.post("/api/signup", async (req, res) => {
       password,
     } = req.body;
 
-    /* CHECK USERNAME */
+    /* =====================================================
+       CHECK USERNAME
+    ===================================================== */
 
     if (!username) {
       return res.status(400).json({
         success: false,
-
         message: "Username is required.",
       });
     }
 
-    /* CHECK PASSWORD */
+    /* =====================================================
+       CHECK PASSWORD
+    ===================================================== */
 
     if (!password) {
       return res.status(400).json({
         success: false,
-
         message: "Password is required.",
       });
     }
@@ -116,18 +108,18 @@ app.post("/api/signup", async (req, res) => {
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
-
         message:
           "Password must be at least 6 characters.",
       });
     }
 
-    /* EMAIL OR PHONE REQUIRED */
+    /* =====================================================
+       EMAIL OR PHONE REQUIRED
+    ===================================================== */
 
     if (!email && !phone) {
       return res.status(400).json({
         success: false,
-
         message:
           "Please provide an email or phone number.",
       });
@@ -178,7 +170,6 @@ app.post("/api/signup", async (req, res) => {
     if (existingUsers.length > 0) {
       return res.status(409).json({
         success: false,
-
         message:
           "Username, email, or phone number is already registered.",
       });
@@ -215,7 +206,7 @@ app.post("/api/signup", async (req, res) => {
     );
 
     /* =====================================================
-       RESPONSE
+       SUCCESS RESPONSE
     ===================================================== */
 
     return res.status(201).json({
@@ -226,15 +217,14 @@ app.post("/api/signup", async (req, res) => {
 
       user: {
         id: result.insertId,
-
         username: username,
-
         email: email || null,
-
         phone: phone || null,
       },
     });
+
   } catch (error) {
+
     console.error(
       "Signup error:",
       error
@@ -257,12 +247,15 @@ app.post("/api/signup", async (req, res) => {
 
 app.post("/api/login", async (req, res) => {
   try {
+
     const {
       username,
       password,
     } = req.body;
 
-    /* CHECK INPUT */
+    /* =====================================================
+       CHECK INPUT
+    ===================================================== */
 
     if (!username || !password) {
       return res.status(400).json({
@@ -328,6 +321,7 @@ app.post("/api/login", async (req, res) => {
     ===================================================== */
 
     try {
+
       await db.execute(
         `
         INSERT INTO login_events
@@ -342,7 +336,9 @@ app.post("/api/login", async (req, res) => {
           "password",
         ]
       );
+
     } catch (loginEventError) {
+
       console.error(
         "Login event error:",
         loginEventError
@@ -354,33 +350,37 @@ app.post("/api/login", async (req, res) => {
     ===================================================== */
 
     return res.json({
+
       success: true,
 
-      message: "Login successful.",
+      message:
+        "Login successful.",
 
       user: {
         id: user.id,
-
         username: user.username,
-
         email: user.email,
-
         phone: user.phone,
       },
+
     });
+
   } catch (error) {
+
     console.error(
       "Login error:",
       error
     );
 
     return res.status(500).json({
+
       success: false,
 
       message:
         "Server error while logging in.",
 
       error: error.message,
+
     });
   }
 });
@@ -391,20 +391,27 @@ app.post("/api/login", async (req, res) => {
 ========================================================= */
 
 app.post("/api/login-phone", async (req, res) => {
+
   try {
+
     const {
       phone,
       password,
     } = req.body;
 
-    /* CHECK INPUT */
+    /* =====================================================
+       CHECK INPUT
+    ===================================================== */
 
     if (!phone || !password) {
+
       return res.status(400).json({
+
         success: false,
 
         message:
           "Phone number and password are required.",
+
       });
     }
 
@@ -428,11 +435,14 @@ app.post("/api/login-phone", async (req, res) => {
     );
 
     if (users.length === 0) {
+
       return res.status(401).json({
+
         success: false,
 
         message:
           "Phone number or password is incorrect.",
+
       });
     }
 
@@ -449,11 +459,14 @@ app.post("/api/login-phone", async (req, res) => {
       );
 
     if (!passwordMatch) {
+
       return res.status(401).json({
+
         success: false,
 
         message:
           "Phone number or password is incorrect.",
+
       });
     }
 
@@ -462,6 +475,7 @@ app.post("/api/login-phone", async (req, res) => {
     ===================================================== */
 
     try {
+
       await db.execute(
         `
         INSERT INTO login_events
@@ -476,7 +490,9 @@ app.post("/api/login-phone", async (req, res) => {
           "phone",
         ]
       );
+
     } catch (loginEventError) {
+
       console.error(
         "Login event error:",
         loginEventError
@@ -488,11 +504,14 @@ app.post("/api/login-phone", async (req, res) => {
     ===================================================== */
 
     return res.json({
+
       success: true,
 
-      message: "Phone login successful.",
+      message:
+        "Phone login successful.",
 
       user: {
+
         id: user.id,
 
         username: user.username,
@@ -500,34 +519,42 @@ app.post("/api/login-phone", async (req, res) => {
         email: user.email,
 
         phone: user.phone,
+
       },
+
     });
+
   } catch (error) {
+
     console.error(
       "Phone login error:",
       error
     );
 
     return res.status(500).json({
+
       success: false,
 
       message:
         "Server error while logging in with phone.",
 
       error: error.message,
+
     });
   }
 });
 
 /* =========================================================
    SERVER
+   RENDER COMPATIBLE
 ========================================================= */
 
-const PORT =
-  process.env.PORT || 5000;
+const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
+
   console.log(
-    `Server running on http://localhost:${PORT}`
+    `Server running on port ${PORT}`
   );
+
 });

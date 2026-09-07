@@ -1,16 +1,63 @@
-const mysql = require("mysql2/promise");
+const { Pool } = require("pg");
 require("dotenv").config();
 
-const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: 3306,
+/* =========================================================
+   NEON POSTGRESQL CONNECTION
+========================================================= */
 
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+
+  ssl: {
+    rejectUnauthorized: false,
+  },
+
+  max: 10,
+
+  idleTimeoutMillis: 30000,
+
+  connectionTimeoutMillis: 10000,
 });
 
-module.exports = pool;
+/* =========================================================
+   TEST DATABASE CONNECTION
+========================================================= */
+
+async function testDatabaseConnection() {
+  let connection;
+
+  try {
+    connection = await db.connect();
+
+    const result = await connection.query(
+      "SELECT NOW() AS current_time"
+    );
+
+    console.log("=================================");
+    console.log("Neon PostgreSQL connected!");
+    console.log("Database time:", result.rows[0].current_time);
+    console.log("=================================");
+
+  } catch (error) {
+
+    console.error("=================================");
+    console.error("Neon database connection failed!");
+    console.error(error.message);
+    console.error("=================================");
+
+  } finally {
+
+    if (connection) {
+      connection.release();
+    }
+  }
+}
+
+/* =========================================================
+   EXPORT
+========================================================= */
+
+module.exports = {
+  db,
+  testDatabaseConnection,
+};

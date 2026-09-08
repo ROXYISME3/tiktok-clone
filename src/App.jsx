@@ -2,9 +2,15 @@ import { useState } from "react";
 import "./App.css";
 import tiktokLogo from "./assets/tiktok-logo.png";
 
-/* =========================
+/* =========================================================
+   API URL
+========================================================= */
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+/* =========================================================
    ICONS
-========================= */
+========================================================= */
 
 const QRIcon = () => (
   <svg
@@ -22,6 +28,7 @@ const QRIcon = () => (
       stroke="currentColor"
       strokeWidth="2"
     />
+
     <rect x="5" y="5" width="3" height="3" fill="currentColor" />
 
     <rect
@@ -32,6 +39,7 @@ const QRIcon = () => (
       stroke="currentColor"
       strokeWidth="2"
     />
+
     <rect x="16" y="5" width="3" height="3" fill="currentColor" />
 
     <rect
@@ -42,6 +50,7 @@ const QRIcon = () => (
       stroke="currentColor"
       strokeWidth="2"
     />
+
     <rect x="5" y="16" width="3" height="3" fill="currentColor" />
 
     <path
@@ -98,20 +107,16 @@ const HelpIcon = () => (
   </svg>
 );
 
-/* =========================
+/* =========================================================
    APP
-========================= */
+========================================================= */
 
 function App() {
-  /* =========================
-     SCREEN
-  ========================= */
-
   const [screen, setScreen] = useState("main");
 
-  /* =========================
+  /* =========================================================
      LOGIN
-  ========================= */
+  ========================================================= */
 
   const [loginMethod, setLoginMethod] = useState("password");
 
@@ -121,20 +126,23 @@ function App() {
   const [phone, setPhone] = useState("");
   const [phonePassword, setPhonePassword] = useState("");
 
-  /* =========================
+  /* =========================================================
      SIGN UP
-  ========================= */
+  ========================================================= */
 
   const [signupUsername, setSignupUsername] = useState("");
+
   const [signupEmail, setSignupEmail] = useState("");
+
   const [signupPhone, setSignupPhone] = useState("");
+
   const [signupPassword, setSignupPassword] = useState("");
 
   const [signupMethod, setSignupMethod] = useState("email");
 
-  /* =========================
+  /* =========================================================
      OTHER
-  ========================= */
+  ========================================================= */
 
   const [loading, setLoading] = useState(false);
   const [signupLoading, setSignupLoading] = useState(false);
@@ -152,15 +160,15 @@ function App() {
 
     setMessage("");
 
-    if (!username || !password) {
-      setMessage("Please enter your username/email and password.");
+    if (!username.trim() || !password) {
+      setMessage("Please enter your email/username and password.");
       return;
     }
 
     try {
       setLoading(true);
 
-      const response = await fetch("http://localhost:5000/api/login", {
+      const response = await fetch(`${API_URL}/api/login`, {
         method: "POST",
 
         headers: {
@@ -168,8 +176,8 @@ function App() {
         },
 
         body: JSON.stringify({
-          username: username,
-          password: password,
+          identifier: username.trim(),
+          password,
         }),
       });
 
@@ -177,17 +185,16 @@ function App() {
 
       if (data.success) {
         setLoggedInUser(data.user);
-        setScreen("dashboard");
+        setPassword("");
         setMessage("");
+        setScreen("dashboard");
       } else {
-        setMessage(data.message || "Invalid username/email or password.");
+        setMessage(data.message || "Invalid email/username or password.");
       }
     } catch (error) {
       console.error("Login error:", error);
 
-      setMessage(
-        "Cannot connect to the server. Make sure Node.js is running on http://localhost:5000.",
-      );
+      setMessage("Cannot connect to the server. Please check your Render API.");
     } finally {
       setLoading(false);
     }
@@ -195,7 +202,6 @@ function App() {
 
   /* =========================================================
      PHONE LOGIN
-     No 6-digit code
   ========================================================= */
 
   const handlePhoneLogin = async (e) => {
@@ -203,7 +209,7 @@ function App() {
 
     setMessage("");
 
-    if (!phone || !phonePassword) {
+    if (!phone.trim() || !phonePassword) {
       setMessage("Please enter your phone number and password.");
       return;
     }
@@ -211,7 +217,7 @@ function App() {
     try {
       setLoading(true);
 
-      const response = await fetch("http://localhost:5000/api/login-phone", {
+      const response = await fetch(`${API_URL}/api/login-phone`, {
         method: "POST",
 
         headers: {
@@ -219,7 +225,7 @@ function App() {
         },
 
         body: JSON.stringify({
-          phone: phone,
+          phone: phone.trim(),
           password: phonePassword,
         }),
       });
@@ -228,24 +234,23 @@ function App() {
 
       if (data.success) {
         setLoggedInUser(data.user);
-        setScreen("dashboard");
+        setPhonePassword("");
         setMessage("");
+        setScreen("dashboard");
       } else {
         setMessage(data.message || "Invalid phone number or password.");
       }
     } catch (error) {
       console.error("Phone login error:", error);
 
-      setMessage(
-        "Cannot connect to the server. Make sure Node.js is running on http://localhost:5000.",
-      );
+      setMessage("Cannot connect to the server. Please check your Render API.");
     } finally {
       setLoading(false);
     }
   };
 
   /* =========================================================
-     SIGN UP
+     REGISTER
   ========================================================= */
 
   const handleSignup = async (e) => {
@@ -253,32 +258,42 @@ function App() {
 
     setMessage("");
 
-    if (!signupUsername || !signupPassword) {
+    const cleanUsername = signupUsername.trim();
+
+    const cleanEmail = signupEmail.trim().toLowerCase();
+
+    const cleanPhone = signupPhone.trim();
+
+    /* -------------------------
+       VALIDATION
+    ------------------------- */
+
+    if (!cleanUsername || !signupPassword) {
       setMessage("Username and password are required.");
       return;
     }
 
-    if (signupMethod === "email" && !signupEmail) {
+    if (signupMethod === "email" && !cleanEmail) {
       setMessage("Please enter your email address.");
       return;
     }
 
-    if (signupMethod === "phone" && !signupPhone) {
+    if (signupMethod === "phone" && !cleanPhone) {
       setMessage("Please enter your phone number.");
       return;
     }
 
-    if (signupUsername.length < 3) {
+    if (cleanUsername.length < 3) {
       setMessage("Username must be at least 3 characters.");
       return;
     }
 
-    if (signupMethod === "email" && !signupEmail.includes("@")) {
+    if (signupMethod === "email" && !cleanEmail.includes("@")) {
       setMessage("Please enter a valid email address.");
       return;
     }
 
-    if (signupMethod === "phone" && signupPhone.length < 10) {
+    if (signupMethod === "phone" && cleanPhone.length < 10) {
       setMessage("Please enter a valid phone number.");
       return;
     }
@@ -288,10 +303,14 @@ function App() {
       return;
     }
 
+    /* -------------------------
+       SEND TO SERVER
+    ------------------------- */
+
     try {
       setSignupLoading(true);
 
-      const response = await fetch("http://localhost:5000/api/signup", {
+      const response = await fetch(`${API_URL}/api/register`, {
         method: "POST",
 
         headers: {
@@ -299,11 +318,11 @@ function App() {
         },
 
         body: JSON.stringify({
-          username: signupUsername,
+          username: cleanUsername,
 
-          email: signupMethod === "email" ? signupEmail : null,
+          email: signupMethod === "email" ? cleanEmail : null,
 
-          phone: signupMethod === "phone" ? signupPhone : null,
+          phone: signupMethod === "phone" ? cleanPhone : null,
 
           password: signupPassword,
         }),
@@ -312,15 +331,15 @@ function App() {
       const data = await response.json();
 
       if (data.success) {
-        setMessage("Account created successfully! You can now log in.");
-
-        setUsername(signupUsername);
+        setUsername(cleanUsername);
         setPassword("");
 
         setSignupUsername("");
         setSignupEmail("");
         setSignupPhone("");
         setSignupPassword("");
+
+        setMessage("Account created successfully! You can now log in.");
 
         setTimeout(() => {
           setScreen("account");
@@ -332,9 +351,7 @@ function App() {
     } catch (error) {
       console.error("Signup error:", error);
 
-      setMessage(
-        "Cannot connect to the server. Make sure Node.js is running on http://localhost:5000.",
-      );
+      setMessage("Cannot connect to the server. Please check your Render API.");
     } finally {
       setSignupLoading(false);
     }
@@ -497,7 +514,7 @@ function App() {
           <section className="account-card">
             <h1>Sign up</h1>
 
-            <p className="description">Create your TikTok account</p>
+            <p className="description">Create your TikTok demo account</p>
 
             <form onSubmit={handleSignup}>
               <input
@@ -517,6 +534,7 @@ function App() {
                   value={signupMethod}
                   onChange={(e) => {
                     setSignupMethod(e.target.value);
+
                     setMessage("");
                   }}
                 >
@@ -641,7 +659,7 @@ function App() {
                 Hello, <span>{loggedInUser?.username}</span>!
               </h1>
 
-              <p>You are successfully logged in to your Tiktok account.</p>
+              <p>You are successfully logged in to your TikTok demo account.</p>
             </div>
 
             <div className="profile-circle">
@@ -723,7 +741,7 @@ function App() {
         <footer className="dashboard-footer">
           <span>© 2026 Tiktok</span>
 
-          <span>Your account is securely connected.</span>
+          <span>Your demo account is connected.</span>
         </footer>
       </div>
     );
@@ -770,6 +788,7 @@ function App() {
                   className="switch-link"
                   onClick={() => {
                     setLoginMethod("password");
+
                     setMessage("");
                   }}
                 >
@@ -785,10 +804,9 @@ function App() {
                   placeholder="Phone number"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
+                  autoComplete="tel"
                 />
               </div>
-
-              {/* NO 6-DIGIT CODE */}
 
               <input
                 className="full-input"
@@ -819,6 +837,7 @@ function App() {
                   className="switch-link"
                   onClick={() => {
                     setLoginMethod("phone");
+
                     setMessage("");
                   }}
                 >

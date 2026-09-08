@@ -1,63 +1,38 @@
 const { Pool } = require("pg");
 require("dotenv").config();
 
-/* =========================================================
-   NEON POSTGRESQL CONNECTION
-========================================================= */
+if (!process.env.DATABASE_URL) {
+  console.error("ERROR: DATABASE_URL is not set.");
+  process.exit(1);
+}
 
-const db = new Pool({
+const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-
   ssl: {
     rejectUnauthorized: false,
   },
-
-  max: 10,
-
-  idleTimeoutMillis: 30000,
-
-  connectionTimeoutMillis: 10000,
 });
 
-/* =========================================================
-   TEST DATABASE CONNECTION
-========================================================= */
+pool.on("connect", () => {
+  console.log("PostgreSQL database connected.");
+});
 
-async function testDatabaseConnection() {
-  let connection;
+pool.on("error", (err) => {
+  console.error("PostgreSQL pool error:", err.message);
+});
 
+async function testDatabase() {
   try {
-    connection = await db.connect();
-
-    const result = await connection.query(
-      "SELECT NOW() AS current_time"
-    );
-
-    console.log("=================================");
-    console.log("Neon PostgreSQL connected!");
-    console.log("Database time:", result.rows[0].current_time);
-    console.log("=================================");
-
+    const result = await pool.query("SELECT NOW()");
+    console.log("Database test successful:", result.rows[0]);
+    return true;
   } catch (error) {
-
-    console.error("=================================");
-    console.error("Neon database connection failed!");
-    console.error(error.message);
-    console.error("=================================");
-
-  } finally {
-
-    if (connection) {
-      connection.release();
-    }
+    console.error("Database test failed:", error.message);
+    return false;
   }
 }
 
-/* =========================================================
-   EXPORT
-========================================================= */
-
 module.exports = {
-  db,
-  testDatabaseConnection,
+  pool,
+  testDatabase,
 };

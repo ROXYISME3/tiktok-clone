@@ -3,86 +3,129 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
-const { db, testDatabaseConnection } = require("./db");
+const { pool, testDatabase } = require("./db");
 
 const app = express();
+
+const PORT = process.env.PORT || 5000;
 
 /* =========================================================
    MIDDLEWARE
 ========================================================= */
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 /* =========================================================
-   TEST SERVER
+   HOME
 ========================================================= */
 
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: "TikTok clone server is running.",
+    message: "TikTok Clone API is running.",
+    status: "online",
   });
 });
 
 /* =========================================================
-   TEST NEON POSTGRESQL CONNECTION
+   API TEST
 ========================================================= */
 
-app.get("/api/test", async (req, res) => {
+app.get("/api", (req, res) => {
+  res.json({
+    success: true,
+    message: "TikTok Clone API is running.",
+    status: "online",
+  });
+});
+
+/* =========================================================
+   HEALTH CHECK
+========================================================= */
+
+app.get("/health", async (req, res) => {
   try {
-    const result = await db.query(
-      "SELECT 1 AS connected"
-    );
+    await pool.query("SELECT 1");
 
     res.json({
       success: true,
-      message: "Neon PostgreSQL connection is working!",
-      result: result.rows,
+      server: "online",
+      database: "connected"
     });
   } catch (error) {
-    console.error("Database test error:", error);
+    console.error("Health check error:", error);
 
     res.status(500).json({
       success: false,
-      message: "Neon PostgreSQL connection failed.",
-      error: error.message,
+      server: "online",
+      database: "error",
+      message: error.message
     });
   }
 });
 
 /* =========================================================
-   SIGN UP
+   CREATE USERS TABLE
 ========================================================= */
 
-app.post("/api/signup", async (req, res) => {
+async function createUsersTable() {
   try {
-    const {
-      username,
-      email,
-      phone,
-      password,
-    } = req.body;
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(100) UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-    /* -----------------------------------------------------
-       CHECK USERNAME
-    ----------------------------------------------------- */
+    console.log("Users table is ready.");
+  } catch (error) {
+    console.error("Could not create users table:", error.message);
+    throw error;
+  }
+}
 
-    if (!username) {
+/* =========================================================
+   REGISTER
+   POST /api/register
+========================================================= */
+
+app.post("/api/register", async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+
+    if (!username || !email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Username is required.",
+        message: "Username, email, and password are required.",
       });
     }
 
-    /* -----------------------------------------------------
-       CHECK PASSWORD
-    ----------------------------------------------------- */
+    const cleanUsername = username.trim();
+    const cleanEmail = email.trim().toLowerCase();
 
-    if (!password) {
+    if (cleanUsername.length < 3) {
       return res.status(400).json({
         success: false,
-        message: "Password is required.",
+        message: "Username must be at least 3 characters.",
+      });
+    }
+
+    if (!cleanEmail.includes("@")) {
+      return res.status(400).json({
+        success: false,
+        message: "Please enter a valid email address.",
       });
     }
 
@@ -93,197 +136,294 @@ app.post("/api/signup", async (req, res) => {
       });
     }
 
-    /* -----------------------------------------------------
-       EMAIL OR PHONE REQUIRED
-    ----------------------------------------------------- */
-
-    if (!email && !phone) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide an email or phone number.",
-      });
-    }
-
-    /* -----------------------------------------------------
-       CHECK EXISTING USER
-    ----------------------------------------------------- */
-
-    const existingResult = await db.query(
+    const existingUser = await pool.query(
       `
       SELECT id
       FROM users
-      WHERE username = $1
-         OR ($2::text IS NOT NULL AND email = $2)
-         OR ($3::text IS NOT NULL AND phone = $3)
+      WHERE LOWER(email) = $1
+         OR LOWER(username) = $2
       LIMIT 1
       `,
-      [username, email || null, phone || null]
+      [cleanEmail, cleanUsername.toLowerCase()]
     );
 
-    if (existingResult.rows.length > 0) {
+    if (existingUser.rows.length > 0) {
       return res.status(409).json({
         success: false,
-        message:
-          "Username, email, or phone number is already registered.",
+        message: "Email or username already exists.",
       });
     }
 
-    /* -----------------------------------------------------
-       HASH PASSWORD
-    ----------------------------------------------------- */
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    const hashedPassword = await bcrypt.hash(
-      password,
-      10
-    );
-
-    /* -----------------------------------------------------
-       INSERT USER
-    ----------------------------------------------------- */
-
-    const insertResult = await db.query(
+    const result = await pool.query(
       `
       INSERT INTO users
-      (
-        username,
-        email,
-        phone,
-        password_hash
-      )
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, username, email, phone
+      (username, email, password)
+      VALUES ($1, $2, $3)
+      RETURNING id, username, email, created_at
       `,
-      [
-        username,
-        email || null,
-        phone || null,
-        hashedPassword,
-      ]
+      [cleanUsername, cleanEmail, hashedPassword]
     );
-
-    const newUser = insertResult.rows[0];
-
-    /* -----------------------------------------------------
-       SUCCESS
-    ----------------------------------------------------- */
 
     return res.status(201).json({
       success: true,
       message: "Account created successfully.",
-      user: newUser,
+      user: result.rows[0],
     });
-
   } catch (error) {
-    console.error("Signup error:", error);
+    console.error("REGISTER ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Server error while creating account.",
-      error: error.message,
+      message: "Server error while creating account.",
     });
   }
 });
 
 /* =========================================================
-   LOGIN WITH USERNAME OR EMAIL
+   SIGNUP ALIAS
+   Allows /api/signup too
 ========================================================= */
 
-app.post("/api/login", async (req, res) => {
+app.post("/api/signup", async (req, res) => {
   try {
-    const {
-      username,
-      password,
-    } = req.body;
-
-    /* -----------------------------------------------------
-       CHECK INPUT
-    ----------------------------------------------------- */
+    const { username, email, phone, password } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({
         success: false,
-        message:
-          "Username/email and password are required.",
+        message: "Username and password are required.",
       });
     }
 
-    /* -----------------------------------------------------
-       FIND USER
-    ----------------------------------------------------- */
+    if (!email && !phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Email or phone number is required.",
+      });
+    }
 
-    const result = await db.query(
+    const cleanUsername = username.trim();
+    const cleanEmail = email ? email.trim().toLowerCase() : null;
+    const cleanPhone = phone ? phone.trim() : null;
+
+    if (cleanUsername.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: "Username must be at least 3 characters.",
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters.",
+      });
+    }
+
+    /*
+      Current users table requires email.
+      If signup is using phone only, create a placeholder email.
+    */
+
+    const finalEmail =
+      cleanEmail || `${cleanPhone.replace(/\D/g, "")}@phone.local`;
+
+    const existingUser = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE LOWER(username) = $1
+         OR LOWER(email) = $2
+      LIMIT 1
+      `,
+      [cleanUsername.toLowerCase(), finalEmail]
+    );
+
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "Username or email already exists.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const result = await pool.query(
+      `
+      INSERT INTO users
+      (username, email, password)
+      VALUES ($1, $2, $3)
+      RETURNING id, username, email, created_at
+      `,
+      [cleanUsername, finalEmail, hashedPassword]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "Account created successfully.",
+      user: result.rows[0],
+    });
+  } catch (error) {
+    console.error("SIGNUP ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while creating account.",
+    });
+  }
+});
+
+/* =========================================================
+   LOGIN
+   POST /api/login
+========================================================= */
+
+app.post("/api/login", async (req, res) => {
+  try {
+    console.log("Login request received.");
+
+    const {
+      identifier,
+      email,
+      username,
+      password,
+    } = req.body;
+
+    const loginIdentifier =
+      identifier ||
+      email ||
+      username;
+
+    if (!loginIdentifier || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email/username and password are required.",
+      });
+    }
+
+    const cleanIdentifier = loginIdentifier.trim().toLowerCase();
+
+    console.log("Login identifier:", cleanIdentifier);
+
+    const result = await pool.query(
       `
       SELECT
         id,
         username,
         email,
-        phone,
-        password_hash
+        password,
+        created_at
       FROM users
-      WHERE username = $1
-         OR email = $1
+      WHERE LOWER(email) = $1
+         OR LOWER(username) = $1
       LIMIT 1
       `,
-      [username]
+      [cleanIdentifier]
     );
 
     if (result.rows.length === 0) {
       return res.status(401).json({
         success: false,
-        message:
-          "Invalid username/email or password.",
+        message: "Invalid email/username or password.",
       });
     }
 
     const user = result.rows[0];
 
-    /* -----------------------------------------------------
-       CHECK PASSWORD
-    ----------------------------------------------------- */
-
     const passwordMatch = await bcrypt.compare(
       password,
-      user.password_hash
+      user.password
     );
 
     if (!passwordMatch) {
       return res.status(401).json({
         success: false,
-        message:
-          "Invalid username/email or password.",
+        message: "Invalid email/username or password.",
       });
     }
 
-    /* -----------------------------------------------------
-       SAVE LOGIN EVENT
-    ----------------------------------------------------- */
+    return res.status(200).json({
+      success: true,
+      message: "Login successful.",
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        created_at: user.created_at,
+      },
+    });
+  } catch (error) {
+    console.error("LOGIN ERROR:", error);
 
-    try {
-      await db.query(
-        `
-        INSERT INTO login_events
-        (
-          user_id,
-          login_method
-        )
-        VALUES ($1, $2)
-        `,
-        [
-          user.id,
-          "password",
-        ]
-      );
-    } catch (loginEventError) {
-      console.error(
-        "Login event error:",
-        loginEventError.message
-      );
+    return res.status(500).json({
+      success: false,
+      message: "Server error while logging in.",
+    });
+  }
+});
+
+/* =========================================================
+   PHONE LOGIN
+========================================================= */
+
+app.post("/api/login-phone", async (req, res) => {
+  try {
+    const { phone, password } = req.body;
+
+    if (!phone || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone number and password are required.",
+      });
     }
 
-    /* -----------------------------------------------------
-       SUCCESS
-    ----------------------------------------------------- */
+    const cleanPhone = phone.trim();
+
+    /*
+      Phone-only accounts currently use:
+      PHONE@phone.local
+    */
+
+    const fakeEmail =
+      `${cleanPhone.replace(/\D/g, "")}@phone.local`;
+
+    const result = await pool.query(
+      `
+      SELECT
+        id,
+        username,
+        email,
+        password,
+        created_at
+      FROM users
+      WHERE LOWER(email) = $1
+      LIMIT 1
+      `,
+      [fakeEmail.toLowerCase()]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid phone number or password.",
+      });
+    }
+
+    const user = result.rows[0];
+
+    const passwordMatch = await bcrypt.compare(
+      password,
+      user.password
+    );
+
+    if (!passwordMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid phone number or password.",
+      });
+    }
 
     return res.json({
       success: true,
@@ -292,157 +432,114 @@ app.post("/api/login", async (req, res) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        phone: user.phone,
+        phone: cleanPhone,
+        created_at: user.created_at,
       },
     });
-
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("PHONE LOGIN ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Server error while logging in.",
-      error: error.message,
+      message: "Server error while logging in.",
     });
   }
 });
 
 /* =========================================================
-   LOGIN WITH PHONE
+   GET USER
 ========================================================= */
 
-app.post("/api/login-phone", async (req, res) => {
+app.get("/api/users/:id", async (req, res) => {
   try {
-    const {
-      phone,
-      password,
-    } = req.body;
+    const { id } = req.params;
 
-    /* -----------------------------------------------------
-       CHECK INPUT
-    ----------------------------------------------------- */
-
-    if (!phone || !password) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Phone number and password are required.",
-      });
-    }
-
-    /* -----------------------------------------------------
-       FIND USER BY PHONE
-    ----------------------------------------------------- */
-
-    const result = await db.query(
+    const result = await pool.query(
       `
       SELECT
         id,
         username,
         email,
-        phone,
-        password_hash
+        created_at
       FROM users
-      WHERE phone = $1
-      LIMIT 1
+      WHERE id = $1
       `,
-      [phone]
+      [id]
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({
+      return res.status(404).json({
         success: false,
-        message:
-          "Phone number or password is incorrect.",
+        message: "User not found.",
       });
     }
-
-    const user = result.rows[0];
-
-    /* -----------------------------------------------------
-       CHECK PASSWORD
-    ----------------------------------------------------- */
-
-    const passwordMatch = await bcrypt.compare(
-      password,
-      user.password_hash
-    );
-
-    if (!passwordMatch) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Phone number or password is incorrect.",
-      });
-    }
-
-    /* -----------------------------------------------------
-       SAVE LOGIN EVENT
-    ----------------------------------------------------- */
-
-    try {
-      await db.query(
-        `
-        INSERT INTO login_events
-        (
-          user_id,
-          login_method
-        )
-        VALUES ($1, $2)
-        `,
-        [
-          user.id,
-          "phone",
-        ]
-      );
-    } catch (loginEventError) {
-      console.error(
-        "Login event error:",
-        loginEventError.message
-      );
-    }
-
-    /* -----------------------------------------------------
-       SUCCESS
-    ----------------------------------------------------- */
 
     return res.json({
       success: true,
-      message: "Phone login successful.",
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        phone: user.phone,
-      },
+      user: result.rows[0],
     });
-
   } catch (error) {
-    console.error(
-      "Phone login error:",
-      error
-    );
+    console.error("GET USER ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Server error while logging in with phone.",
-      error: error.message,
+      message: "Server error.",
     });
   }
+});
+
+/* =========================================================
+   404
+========================================================= */
+
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "API route not found.",
+    path: req.originalUrl,
+  });
+});
+
+/* =========================================================
+   ERROR HANDLER
+========================================================= */
+
+app.use((err, req, res, next) => {
+  console.error("EXPRESS ERROR:", err);
+
+  res.status(500).json({
+    success: false,
+    message: "Internal server error.",
+  });
 });
 
 /* =========================================================
    START SERVER
 ========================================================= */
 
-const PORT = process.env.PORT || 5000;
+async function startServer() {
+  try {
+    console.log("Starting TikTok Clone API...");
 
-app.listen(PORT, "0.0.0.0", async () => {
-  console.log(
-    `Server running on port ${PORT}`
-  );
+    const databaseOK = await testDatabase();
 
-  await testDatabaseConnection();
-});
+    if (!databaseOK) {
+      console.error("Database connection failed.");
+      process.exit(1);
+    }
+
+    await createUsersTable();
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log("----------------------------------------");
+      console.log("TikTok Clone API started.");
+      console.log(`Port: ${PORT}`);
+      console.log("----------------------------------------");
+    });
+  } catch (error) {
+    console.error("SERVER START ERROR:", error);
+    process.exit(1);
+  }
+}
+
+startServer();
